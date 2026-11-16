@@ -189,6 +189,7 @@
     <div class="prose">
       <div class="callout tldr"><span class="ic">TL;DR</span><p>An <strong>MCP server</strong> is a small program that hands an AI agent tools, data or prompt templates over the <strong>Model Context Protocol</strong>, an open standard. The agent's app (the <strong>host</strong>) opens a <strong>client</strong> connection to each server it uses, the two talk in JSON-RPC over stdio or Streamable HTTP, and the server answers with whatever it was built to expose. One server, many hosts, no custom glue code.</p></div>
 <p>An MCP server is a small program that gives an AI agent access to something it doesn’t have built in: a database, an issue tracker, a browser, your files. It speaks the Model Context Protocol, an open standard, so any compliant AI application can connect the same way, without custom code to wire each one up.</p>
+<p>Google’s A2UI 1.0, released 11 Nov 2026, has web and Flutter renderers that work inside MCP Apps, as our <a href="/blog/what-is-a2ui/">A2UI explainer</a> covers; to run several agents side by side, see our <a href="/blog/herdr-alternatives/">Herdr alternatives</a> guide.</p>
 <p>If you already use one AI coding CLI, this layer matters more once you run several agents at once in a <a href="/blog/what-is-a-multi-agent-harness/">multi-agent harness</a>, because each agent reaches its databases and issue trackers through the servers it has been given, and which agent gets which server becomes your call.</p>
 <h2 id="what-is-an-mcp-server" tabindex="-1">What is an MCP server? <a class="anchor" href="#what-is-an-mcp-server" aria-hidden="true">#</a></h2>
 <p>It’s a program that exposes tools, data or prompt templates to an AI application over the Model Context Protocol. The protocol’s own site describes it as an open standard for connecting AI applications to external systems (checked 11 Sep 2026, <a href="https://modelcontextprotocol.io/docs/2026-07-28/getting-started/intro">modelcontextprotocol.io</a>). Anthropic open sourced MCP on 25 November 2024 (checked 11 Sep 2026, <a href="https://www.anthropic.com/news/model-context-protocol">Introducing the Model Context Protocol</a>), and it’s grown well past Anthropic’s own tools since: the protocol’s own site names ChatGPT, Visual Studio Code and Cursor among the applications that support it.</p>
@@ -285,57 +286,57 @@ Commands:
   </div>
 
   <footer class="post-foot wrap"><div class="prevnext">
-      <a class="pn prev" href="/blog/codex-cli-vs-claude-code/"><span class="k">← Older</span><span class="t">Codex vs Claude Code: Plans, Limits and Computer Use (Sep 2026)</span></a>
-      <a class="pn next" href="/blog/how-to-use-claude-code-plan-mode/"><span class="k">Newer →</span><span class="t">Claude Code Planning Mode: How to Use Claude Plan Mode</span></a>
+      <a class="pn prev" href="/blog/codex-cli-vs-claude-code/"><span class="k">← Older</span><span class="t">Codex vs Claude Code: Plans, Limits and Computer Use (Oct 2026)</span></a>
+      <a class="pn next" href="/blog/how-to-use-claude-code-plan-mode/"><span class="k">Newer →</span><span class="t">Claude Code Plan Mode: Shortcut, Exit and Default (Oct 2026)</span></a>
     </div>
     <section class="related">
       <h2>Related in Concepts</h2>
       <div class="post-grid">
         <article class="card t-concepts">
-  <a class="thumb t-concepts" href="/blog/muse-wonder/" aria-hidden="true" tabindex="-1"><img src="/blog/assets/media/muse-wonder/hero.png" alt="" loading="lazy" decoding="async" /></a>
+  <a class="thumb t-concepts" href="/blog/qwen4-max/" aria-hidden="true" tabindex="-1"><img src="/blog/assets/media/qwen4-max/hero.png" alt="" loading="lazy" decoding="async" /></a>
   <div class="body">
     <div class="meta">
-      <time datetime="2026-10-13">Oct 13, 2026</time>
+      <time datetime="2026-11-16">Nov 16, 2026</time>
       <span class="dot" aria-hidden="true"></span>
-      <span>5 min</span>
+      <span>4 min</span>
     </div>
-    <h3><a href="/blog/muse-wonder/">Muse Wonder and Muse Code: Meta&#39;s new models, prices and scores</a></h3>
-    <p class="dek">Meta&#39;s Muse Wonder and Muse Wonder Full: API price, Muse Code plans, context window and Meta&#39;s own coding scores, checked 13 Oct 2026.</p>
+    <h3><a href="/blog/qwen4-max/">Qwen4-Max: Price, Specs and How to Use It in Claude Code (Nov 2026)</a></h3>
+    <p class="dek">Qwen4-Max is Qwen&#39;s new 2.4T flagship with a 1M context: API price, specs, Token Plan, and setup in Claude Code and Qwen Code, checked 16 Nov 2026.</p>
     <div class="foot">
       <span class="tag kind">Concepts</span>
-      <a class="more" href="/blog/muse-wonder/" aria-label="Read: Muse Wonder and Muse Code: Meta&#39;s new models, prices and scores">Read →</a>
+      <a class="more" href="/blog/qwen4-max/" aria-label="Read: Qwen4-Max: Price, Specs and How to Use It in Claude Code (Nov 2026)">Read →</a>
     </div>
   </div>
 </article>
 <article class="card t-concepts">
-  <a class="thumb t-concepts" href="/blog/claude-code-routines/" aria-hidden="true" tabindex="-1"><img src="/blog/assets/media/claude-code-routines/hero.png" alt="" loading="lazy" decoding="async" /></a>
+  <a class="thumb t-concepts" href="/blog/gemini-4-hydrogen/" aria-hidden="true" tabindex="-1"><img src="/blog/assets/media/gemini-4-hydrogen/hero.png" alt="" loading="lazy" decoding="async" /></a>
   <div class="body">
     <div class="meta">
-      <time datetime="2026-10-12">Oct 12, 2026</time>
+      <time datetime="2026-11-13">Nov 13, 2026</time>
       <span class="dot" aria-hidden="true"></span>
       <span>5 min</span>
     </div>
-    <h3><a href="/blog/claude-code-routines/">Claude routines: what they are, triggers, cost and limits</a></h3>
-    <p class="dek">Claude routines run a saved Claude Code prompt in the cloud on a schedule, an API call or a GitHub event. Plans, steps and limits, checked 12 Oct 2026.</p>
+    <h3><a href="/blog/gemini-4-hydrogen/">Gemini 4 Hydrogen: Price vs Argon, Where to Use It and When to Pick It (Nov 2026)</a></h3>
+    <p class="dek">Gemini 4 Hydrogen costs $1.50 in and $7.50 out per 1M tokens (13 Nov 2026). Where you can use it, what Orchestrator does, and Hydrogen or Argon.</p>
     <div class="foot">
       <span class="tag kind">Concepts</span>
-      <a class="more" href="/blog/claude-code-routines/" aria-label="Read: Claude routines: what they are, triggers, cost and limits">Read →</a>
+      <a class="more" href="/blog/gemini-4-hydrogen/" aria-label="Read: Gemini 4 Hydrogen: Price vs Argon, Where to Use It and When to Pick It (Nov 2026)">Read →</a>
     </div>
   </div>
 </article>
 <article class="card t-concepts">
-  <a class="thumb t-concepts" href="/blog/claude-code-projects/" aria-hidden="true" tabindex="-1"><img src="/blog/assets/media/claude-code-projects/hero.png" alt="" loading="lazy" decoding="async" /></a>
+  <a class="thumb t-concepts" href="/blog/llama-cpp-1-0/" aria-hidden="true" tabindex="-1"><img src="/blog/assets/media/llama-cpp-1-0/hero.png" alt="" loading="lazy" decoding="async" /></a>
   <div class="body">
     <div class="meta">
-      <time datetime="2026-10-11">Oct 11, 2026</time>
+      <time datetime="2026-11-13">Nov 13, 2026</time>
       <span class="dot" aria-hidden="true"></span>
       <span>5 min</span>
     </div>
-    <h3><a href="/blog/claude-code-projects/">Claude Code Projects: what they are and who can use them</a></h3>
-    <p class="dek">Claude Code Projects, checked 11 Oct 2026: a public beta on Pro and Max where Claude runs your tasks as parallel threads. Access, limits and plan use.</p>
+    <h3><a href="/blog/llama-cpp-1-0/">llama.cpp 1.0: What Changed and What to Check Before Upgrading</a></h3>
+    <p class="dek">llama.cpp 1.0 drops the deprecated API, adds FP8 KV caches and an MoE expert cache, and hardens llama-server. What changed. Checked 13 Nov 2026.</p>
     <div class="foot">
       <span class="tag kind">Concepts</span>
-      <a class="more" href="/blog/claude-code-projects/" aria-label="Read: Claude Code Projects: what they are and who can use them">Read →</a>
+      <a class="more" href="/blog/llama-cpp-1-0/" aria-label="Read: llama.cpp 1.0: What Changed and What to Check Before Upgrading">Read →</a>
     </div>
   </div>
 </article>
@@ -385,9 +386,10 @@ Commands:
       if (!btn) return;
       var box = btn.closest('.yt');
       var id = box && box.getAttribute('data-yt');
-      if (!id) return;
+      // Only an 11 character YouTube video id may reach the iframe URL.
+      if (!id || !/^[A-Za-z0-9_-]{11}$/.test(id)) return;
       var frame = document.createElement('iframe');
-      frame.src = 'https://www.youtube-nocookie.com/embed/' + id + '?autoplay=1';
+      frame.src = 'https://www.youtube-nocookie.com/embed/' + encodeURIComponent(id) + '?autoplay=1';
       frame.title = box.getAttribute('data-title') || 'YouTube video';
       frame.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
       frame.setAttribute('allowfullscreen', '');

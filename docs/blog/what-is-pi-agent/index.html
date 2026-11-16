@@ -187,7 +187,7 @@
   <div class="post-wrap wrap">
     <div class="prose">
       <p>Pi agent is Earendil’s open source coding agent harness: a minimal, MIT licensed terminal agent that reads your repo, edits files and runs shell commands with the model provider you choose. You extend it with TypeScript extensions instead of waiting for features. Pi 1.0 shipped on 1 Oct 2026. Checked on pi.dev and GitHub on 2 Oct 2026.</p>
-<p>You can run Pi on its own, or use <a href="https://harnessmd.com/download">Munder Difflin</a>, free and open source, a desktop app that runs Pi agents in one office next to Claude Code and Codex, each in its own terminal. The <a href="/blog/how-to-install-and-use-munder-difflin/">install guide</a> covers setup. If the word harness is new to you, start with <a href="/blog/what-is-a-multi-agent-harness/">what is a multi-agent harness</a>.</p>
+<p>You can run Pi on its own, or in <a href="https://harnessmd.com/download">Munder Difflin</a>, which is free and open source: a desktop app that runs a team of AI agents for all kinds of knowledge work, coding included, on your own computer. Pi is one of its engines, next to Claude Code and Codex. The <a href="/blog/how-to-install-and-use-munder-difflin/">install guide</a> covers setup. If the word harness is new to you, start with <a href="/blog/what-is-a-multi-agent-harness/">what is a multi-agent harness</a>.</p>
 <h2 id="what-is-pi-agent" tabindex="-1">What is Pi agent? <a class="anchor" href="#what-is-pi-agent" aria-hidden="true">#</a></h2>
 <p>Pi is a coding agent built to stay small. Its <a href="https://github.com/earendil-works/pi">README</a> says it “ships with powerful defaults but skips features like sub-agents and plan mode”, and asks you to build what you want or install a package that does it. Extensions are TypeScript modules that can add tools, commands and UI. Skills, prompt templates and themes bundle into Pi packages you share through npm or git.</p>
 <p>It has four modes: the interactive TUI, <code>pi -p &quot;query&quot;</code> for scripts (with <code>--mode json</code> for event streams), an RPC protocol over stdin and stdout, and a TypeScript SDK. It loads <code>AGENTS.md</code> from <code>~/.pi/agent/</code>, parent folders and the current folder, and stores each session as a tree you can rewind with <code>/tree</code>.</p>
@@ -303,8 +303,8 @@ SHA256SUMS
 </div>
 <p><strong>Pick Pi if</strong> you want a small core, plan mode and sub-agents only when you add them, and a TUI you can rewrite from inside.</p>
 <p><strong>Pick Munder Difflin if</strong> you’d rather not choose one: it runs Pi, Claude Code, Codex, OpenCode and eight more CLIs side by side on one floor.</p>
-<p><strong>Pick Claude Code if</strong> you’re on a Claude plan and want Anthropic’s agent with permissions built in.</p>
-<p><strong>Pick Codex CLI or OpenCode if</strong> you want guard rails out of the box: approval modes in Codex, a read only Plan agent in OpenCode. Our <a href="/blog/what-is-opencode/">what is OpenCode</a> explainer and <a href="/blog/codex-cli-vs-claude-code/">Codex CLI vs Claude Code</a> cover both.</p>
+<p><strong>Pick Claude Code if</strong> you’re on a Claude plan and want Anthropic’s agent with permissions built in. <a href="/blog/pi-vs-claude-code/">Pi vs Claude Code</a> compares the two in detail.</p>
+<p><strong>Pick Codex CLI or OpenCode if</strong> you want guard rails out of the box: approval modes in Codex, a read only Plan agent in OpenCode. Our <a href="/blog/what-is-opencode/">what is OpenCode</a> explainer and <a href="/blog/codex-cli-vs-claude-code/">Codex CLI vs Claude Code</a> cover both. For seven more options, see <a href="/blog/pi-agent-alternatives/">Pi agent alternatives</a>.</p>
 <h2 id="can-you-run-pi-agents-inside-munder-difflin" tabindex="-1">Can you run Pi agents inside Munder Difflin? <a class="anchor" href="#can-you-run-pi-agents-inside-munder-difflin" aria-hidden="true">#</a></h2>
 <p>Yes. As of Munder Difflin 0.5.5, <code>src/shared/agentProvider.ts</code> lists Pi as one of twelve CLIs, with <code>pi</code> as the command, <code>--model provider/model</code> when you pick a model, and <code>npm install -g --ignore-scripts @earendil-works/pi-coding-agent</code> as its install command. <code>installPiHooks</code> in <code>src/main/hive.ts</code> gives each agent its own <code>PI_CODING_AGENT_DIR</code> with a bridge extension, so your global <code>~/.pi</code> is never changed, and copies your <code>models.json</code> across.</p>
 <p>One limit: the source calls that bridge best effort until it is confirmed against live keys. If its status events miss, the app falls back to nudging the agent so its inbox still gets read.</p>
@@ -358,56 +358,56 @@ SHA256SUMS
 
   <footer class="post-foot wrap"><div class="prevnext">
       <a class="pn prev" href="/blog/open-source-ai-agents/"><span class="k">← Older</span><span class="t">Best Open Source AI Agents: 10 Picks by Job, Checked 1 Oct 2026</span></a>
-      <a class="pn next" href="/blog/what-is-codex/"><span class="k">Newer →</span><span class="t">What Is Codex? OpenAI&#39;s Coding Agent in the CLI, App and Cloud</span></a>
+      <a class="pn next" href="/blog/what-is-codex/"><span class="k">Newer →</span><span class="t">What Is Codex? OpenAI&#39;s Coding Agent, Its Free Plan and Models</span></a>
     </div>
     <section class="related">
       <h2>Related in Concepts</h2>
       <div class="post-grid">
         <article class="card t-concepts">
-  <a class="thumb t-concepts" href="/blog/muse-wonder/" aria-hidden="true" tabindex="-1"><img src="/blog/assets/media/muse-wonder/hero.png" alt="" loading="lazy" decoding="async" /></a>
+  <a class="thumb t-concepts" href="/blog/qwen4-max/" aria-hidden="true" tabindex="-1"><img src="/blog/assets/media/qwen4-max/hero.png" alt="" loading="lazy" decoding="async" /></a>
   <div class="body">
     <div class="meta">
-      <time datetime="2026-10-13">Oct 13, 2026</time>
+      <time datetime="2026-11-16">Nov 16, 2026</time>
       <span class="dot" aria-hidden="true"></span>
-      <span>5 min</span>
+      <span>4 min</span>
     </div>
-    <h3><a href="/blog/muse-wonder/">Muse Wonder and Muse Code: Meta&#39;s new models, prices and scores</a></h3>
-    <p class="dek">Meta&#39;s Muse Wonder and Muse Wonder Full: API price, Muse Code plans, context window and Meta&#39;s own coding scores, checked 13 Oct 2026.</p>
+    <h3><a href="/blog/qwen4-max/">Qwen4-Max: Price, Specs and How to Use It in Claude Code (Nov 2026)</a></h3>
+    <p class="dek">Qwen4-Max is Qwen&#39;s new 2.4T flagship with a 1M context: API price, specs, Token Plan, and setup in Claude Code and Qwen Code, checked 16 Nov 2026.</p>
     <div class="foot">
       <span class="tag kind">Concepts</span>
-      <a class="more" href="/blog/muse-wonder/" aria-label="Read: Muse Wonder and Muse Code: Meta&#39;s new models, prices and scores">Read →</a>
+      <a class="more" href="/blog/qwen4-max/" aria-label="Read: Qwen4-Max: Price, Specs and How to Use It in Claude Code (Nov 2026)">Read →</a>
     </div>
   </div>
 </article>
 <article class="card t-concepts">
-  <a class="thumb t-concepts" href="/blog/claude-code-routines/" aria-hidden="true" tabindex="-1"><img src="/blog/assets/media/claude-code-routines/hero.png" alt="" loading="lazy" decoding="async" /></a>
+  <a class="thumb t-concepts" href="/blog/gemini-4-hydrogen/" aria-hidden="true" tabindex="-1"><img src="/blog/assets/media/gemini-4-hydrogen/hero.png" alt="" loading="lazy" decoding="async" /></a>
   <div class="body">
     <div class="meta">
-      <time datetime="2026-10-12">Oct 12, 2026</time>
+      <time datetime="2026-11-13">Nov 13, 2026</time>
       <span class="dot" aria-hidden="true"></span>
       <span>5 min</span>
     </div>
-    <h3><a href="/blog/claude-code-routines/">Claude routines: what they are, triggers, cost and limits</a></h3>
-    <p class="dek">Claude routines run a saved Claude Code prompt in the cloud on a schedule, an API call or a GitHub event. Plans, steps and limits, checked 12 Oct 2026.</p>
+    <h3><a href="/blog/gemini-4-hydrogen/">Gemini 4 Hydrogen: Price vs Argon, Where to Use It and When to Pick It (Nov 2026)</a></h3>
+    <p class="dek">Gemini 4 Hydrogen costs $1.50 in and $7.50 out per 1M tokens (13 Nov 2026). Where you can use it, what Orchestrator does, and Hydrogen or Argon.</p>
     <div class="foot">
       <span class="tag kind">Concepts</span>
-      <a class="more" href="/blog/claude-code-routines/" aria-label="Read: Claude routines: what they are, triggers, cost and limits">Read →</a>
+      <a class="more" href="/blog/gemini-4-hydrogen/" aria-label="Read: Gemini 4 Hydrogen: Price vs Argon, Where to Use It and When to Pick It (Nov 2026)">Read →</a>
     </div>
   </div>
 </article>
 <article class="card t-concepts">
-  <a class="thumb t-concepts" href="/blog/claude-code-projects/" aria-hidden="true" tabindex="-1"><img src="/blog/assets/media/claude-code-projects/hero.png" alt="" loading="lazy" decoding="async" /></a>
+  <a class="thumb t-concepts" href="/blog/llama-cpp-1-0/" aria-hidden="true" tabindex="-1"><img src="/blog/assets/media/llama-cpp-1-0/hero.png" alt="" loading="lazy" decoding="async" /></a>
   <div class="body">
     <div class="meta">
-      <time datetime="2026-10-11">Oct 11, 2026</time>
+      <time datetime="2026-11-13">Nov 13, 2026</time>
       <span class="dot" aria-hidden="true"></span>
       <span>5 min</span>
     </div>
-    <h3><a href="/blog/claude-code-projects/">Claude Code Projects: what they are and who can use them</a></h3>
-    <p class="dek">Claude Code Projects, checked 11 Oct 2026: a public beta on Pro and Max where Claude runs your tasks as parallel threads. Access, limits and plan use.</p>
+    <h3><a href="/blog/llama-cpp-1-0/">llama.cpp 1.0: What Changed and What to Check Before Upgrading</a></h3>
+    <p class="dek">llama.cpp 1.0 drops the deprecated API, adds FP8 KV caches and an MoE expert cache, and hardens llama-server. What changed. Checked 13 Nov 2026.</p>
     <div class="foot">
       <span class="tag kind">Concepts</span>
-      <a class="more" href="/blog/claude-code-projects/" aria-label="Read: Claude Code Projects: what they are and who can use them">Read →</a>
+      <a class="more" href="/blog/llama-cpp-1-0/" aria-label="Read: llama.cpp 1.0: What Changed and What to Check Before Upgrading">Read →</a>
     </div>
   </div>
 </article>
@@ -457,9 +457,10 @@ SHA256SUMS
       if (!btn) return;
       var box = btn.closest('.yt');
       var id = box && box.getAttribute('data-yt');
-      if (!id) return;
+      // Only an 11 character YouTube video id may reach the iframe URL.
+      if (!id || !/^[A-Za-z0-9_-]{11}$/.test(id)) return;
       var frame = document.createElement('iframe');
-      frame.src = 'https://www.youtube-nocookie.com/embed/' + id + '?autoplay=1';
+      frame.src = 'https://www.youtube-nocookie.com/embed/' + encodeURIComponent(id) + '?autoplay=1';
       frame.title = box.getAttribute('data-title') || 'YouTube video';
       frame.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
       frame.setAttribute('allowfullscreen', '');

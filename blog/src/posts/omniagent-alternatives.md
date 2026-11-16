@@ -6,7 +6,7 @@ category: comparisons
 categoryLabel: Comparisons
 type: Technical
 pinned: true
-pinOrder: 7
+pinOrder: 8
 primaryKeyword: "omniagent alternatives"
 secondaryKeywords: ["omnigent alternatives", "omnigent databricks", "omnigent meta harness", "omniagent harness", "omnigent vs opencode"]
 tags: ["Comparisons", "Multi-Agent", "Claude Code", "Tools", "Open Source"]
@@ -22,6 +22,8 @@ faq:
 ---
 
 The OmniAgent harness people search for is Omnigent, an Apache 2.0 meta harness from Databricks. Good alternatives: Claude Code agent teams for a lighter setup, Munder Difflin or Orca for a local desktop app, Paperclip for company style governance, and LangGraph or the OpenAI Agents SDK if you'd rather write the orchestration yourself.
+
+If Paperclip is the tool you are weighing, our [Paperclip alternatives](/blog/paperclip-alternatives/) page compares six tools like it.
 
 The name is crowded. On GitHub, plexusone/omniagent is a personal assistant that replies for you across chat apps, and sbyoun/OmniAgent is a terminal for running CLI agents across servers. CallMiner also sells an unrelated customer service OmniAgent. If "harness" is a new word here, start with [what a multi-agent harness is](/blog/what-is-a-multi-agent-harness/). Everything below was checked on 14 Sep 2026.
 
@@ -51,7 +53,7 @@ The setup is more than one download. The README lists Python 3.12 or newer, `uv`
 
 Everything goes through a server. Even solo, you run one on your laptop and every client attaches to it. That is what makes shared sessions possible, and it is more moving parts than one person at one desk needs. Our piece on [local first vs cloud agent SDKs](/blog/local-first-vs-cloud-agent-sdks/) covers that trade in general.
 
-If a server is more than you need, [Munder Difflin](https://harnessmd.com/download) is the local version of the idea: a free and open source desktop app for macOS, Windows and Linux where every agent is a real CLI in its own terminal, across twelve providers including Claude Code, Codex, Gemini CLI, Copilot and Cursor. Michael, your clone, takes your brief and hands out the work, agents share memory, and per agent token caps plus a circuit breaker keep spend in check. It has no server wide policy layer like Omnigent's, and the agents run only while your computer is on.
+If a server is more than you need, [Munder Difflin](https://harnessmd.com/download) is the local version of the idea: a free and open source desktop app for macOS, Windows and Linux where every agent is a real CLI in its own terminal, across twelve providers including Claude Code, Codex, Gemini CLI, Copilot and Cursor. Michael, your clone, takes your brief and hands out the work, agents share memory, and per agent token caps plus a circuit breaker keep spend in check. It has no server wide policy layer like Omnigent's. Its agents run on your computer, or in its Cloud Office with your computer off.
 
 Governance is written as code. Omnigent policies return allow, deny or ask, and they stack at three levels: server wide for admins, per agent in the YAML, and per session in the UI, with session rules checked first. Built-in handlers ask before file and shell tool calls, cap tool calls per session and block expensive models past a spend limit, with optional warnings before that. You can toggle the built-ins in the UI, but a rule beyond them means writing a Python handler, which is either a relief or a chore depending on who owns Python on your team. On the managed service, [Databricks' docs](https://docs.databricks.com/aws/en/omnigent/) (updated 11 Sep 2026) say only the built-in contextual policies are supported.
 
