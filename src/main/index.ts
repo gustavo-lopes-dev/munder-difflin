@@ -84,7 +84,7 @@ import { detectNodeVersion, nodeIsUsable, resolveNodeInstaller } from './nodeIns
 import { toolCatalog, type ToolStatus } from '../shared/toolCatalog';
 import { listLocalSkills, loadCatalog, installSkill, uninstallSkill, type LocalSkill } from './skills';
 import { loadHero } from './hero';
-import { loadModelCatalog } from './modelCatalog';
+import { loadModelCatalog, loadOpenCodeModels } from './modelCatalog';
 import {
   CODEX_REMOTE_SOCKET_RELATIVE,
   codexRemoteAliasPath,
@@ -1386,6 +1386,8 @@ let slackServer: SlackWebhookServer | null = null;
 /** The loopback-only reply endpoint (lets the bundled helper post back to Slack
  *  without ever seeing the bot token). Lifecycle is tied to `slackServer`. */
 let slackReplyServer: SlackReplyServer | null = null;
+let slackReplyQueueTimer: ReturnType<typeof setInterval> | null = null;
+let slackReplyQueuePolling = false;
 /** Last public tunnel URL handed out — persisted so Settings can re-show the
  *  Request URL after a reopen (Slack reuses it until the server is stopped). */
 let lastSlackUrl: string | undefined;
@@ -1403,7 +1405,7 @@ let lastSlackUrl: string | undefined;
 function buildAutonomousRequestProtocol(channel: string, threadTs: string, helperPath: string): string {
   return `[AUTONOMOUS REQUEST PROTOCOL — this request arrived via Slack; no interactive human is watching] Handle it under this protocol:
 1. ROUTE FAST — triage and hand this to the single most-relevant agent right away. CHECK THE LIVE ROSTER FIRST (active agents in registry.json + their state in fleet.json) and prefer an EXISTING agent that fits — especially when the request names one ("ask Pam…", "have Jim…"): route to that agent and only spawn a new one if none is a sensible fit. Decompose only if it genuinely needs several. Don't sit on it.
-2. DELEGATE WITH THE REPLY HANDLE — tell that agent to do the work autonomously AND to post its result back to THIS Slack thread itself when done, using exactly: "${hive.nodeCommand()}" "${helperPath}" --channel ${channel} --thread ${threadTs} --text "<substantive result>" (that first path is the harness's bundled Node, already resolved for this machine — pass it verbatim; bare "node" is not on the hook/agent PATH on many machines.)
+2. DELEGATE WITH THE REPLY HANDLE — tell that agent to do the work autonomously AND reply to THIS Slack thread. PREFER the MCP tool reply on server munder_slack with {"channel":"${channel}","thread_ts":"${threadTs}","text":"<substantive result>"}. This host-side tool works WITHOUT a shell or bubblewrap; use it even if command execution is broken. It queues the reply for Munder to deliver. If the recipient has no such tool, use exactly: "${hive.nodeCommand()}" "${helperPath}" --channel ${channel} --thread ${threadTs} --text "<substantive result>" (the first path is the bundled Node; bare "node" may not be on PATH). If delegation itself is blocked, answer this thread yourself using the MCP tool rather than stopping at the shell error.
 3. AUTONOMOUS EXECUTION — no interactive questions. PAUSE/ask ONLY for high-severity actions: pushing to main or any remote; buying or spawning infrastructure or paid services; deleting an existing repo, file, or folder it did not create. Stay READ-ONLY at critical infrastructure and git-push-type changes unless explicitly approved.
 4. DIRECT, SUBSTANTIVE REPLY — the agent posts a real Slack-mrkdwn answer (short *bold* headline + the actual outcome/specifics/links), NEVER a bare "done"/":white_check_mark:".
 5. REPORT TO GOD — the agent then tells you (Michael) what it did.
@@ -1434,9 +1436,23 @@ const directlyRepliedThreads = new Set<string>();
  *  `process.resourcesPath` (electron-builder extraResources). Dev: the repo's
  *  `resources/` dir, resolved from the app path. */
 function slackReplyScriptPath(): string {
-  return app.isPackaged
+  const bundled = app.isPackaged
     ? join(process.resourcesPath, 'md-slack-reply.cjs')
     : join(app.getAppPath(), 'resources', 'md-slack-reply.cjs');
+  // Put the helper inside the hive root. Codex's workspace-write sandbox adds
+  // that root to the agent's writable scope, while the Munder app resources dir
+  // is outside the agent workspace and may be inaccessible to its shell.
+  const root = hive.root();
+  if (!root) return bundled;
+  const target = join(root, 'bin', 'md-slack-reply.cjs');
+  try {
+    mkdirSync(dirname(target), { recursive: true });
+    copyFileSync(bundled, target);
+    return target;
+  } catch (e) {
+    console.error('[slack] could not stage reply helper in hive root:', e);
+    return bundled;
+  }
 }
 
 /** W3 — the bundled read-only `skills/` source dir copied into each agent's
@@ -1596,6 +1612,121 @@ const TERMINAL_SLACK_ERRORS = new Set<string>([
   'not_in_channel', 'is_archived', 'restricted_action', 'org_login_required',
 ]);
 
+/**
+ * Linux command sandboxes may not be able to reach Munder's host loopback reply
+ * endpoint. The helper then writes a narrowly-scoped request under AGENT_DIR;
+ * this poller validates it and performs the Slack call from the main process.
+ */
+async function pollSlackReplyQueue(): Promise<void> {
+  if (slackReplyQueuePolling) return;
+  const root = hive.root();
+  if (!root) return;
+  const agentsDir = join(root, 'agents');
+  try {
+    const info = lstatSync(agentsDir);
+    if (!info.isDirectory() || info.isSymbolicLink()) return;
+  } catch {
+    return;
+  }
+
+  slackReplyQueuePolling = true;
+  try {
+    const botToken = readConfig().slackBotToken ?? '';
+    for (const agentId of readdirSync(agentsDir)) {
+      const agentDir = join(agentsDir, agentId);
+      const pendingDir = join(agentDir, 'slack-replies', 'pending');
+      try {
+        const info = lstatSync(pendingDir);
+        if (!info.isDirectory() || info.isSymbolicLink()) continue;
+      } catch {
+        continue;
+      }
+
+      for (const file of readdirSync(pendingDir).filter((name) => name.endsWith('.json')).slice(0, 20)) {
+        const fullPath = join(pendingDir, file);
+        try {
+          const info = lstatSync(fullPath);
+          if (!info.isFile() || info.isSymbolicLink() || info.size > 64 * 1024) {
+            throw new Error('invalid queued reply file');
+          }
+          const request = JSON.parse(readFileSync(fullPath, 'utf8')) as {
+            channel?: unknown;
+            thread_ts?: unknown;
+            text?: unknown;
+            attempts?: unknown;
+            nextAttemptAt?: unknown;
+          };
+          if (
+            typeof request.channel !== 'string' ||
+            !/^[A-Z0-9]{2,32}$/.test(request.channel) ||
+            typeof request.thread_ts !== 'string' ||
+            !/^\d{10}\.\d{6,}$/.test(request.thread_ts) ||
+            typeof request.text !== 'string' ||
+            !request.text.trim() ||
+            request.text.length > 40_000
+          ) {
+            throw new Error('invalid queued reply fields');
+          }
+          if (typeof request.nextAttemptAt === 'number' && request.nextAttemptAt > Date.now()) continue;
+
+          const result = await postSlackReply({
+            botToken,
+            channel: request.channel,
+            thread_ts: request.thread_ts,
+            text: request.text
+          });
+          if (result.ok) {
+            directlyRepliedThreads.add(request.thread_ts);
+            const sentDir = join(agentDir, 'slack-replies', 'sent');
+            mkdirSync(sentDir, { recursive: true, mode: 0o700 });
+            renameSync(fullPath, join(sentDir, file));
+            console.log('[slack] queued reply posted', request.channel, request.thread_ts);
+            continue;
+          }
+
+          const attempts = (typeof request.attempts === 'number' ? request.attempts : 0) + 1;
+          if (!result.error || TERMINAL_SLACK_ERRORS.has(result.error) || attempts >= 5) {
+            const failedDir = join(agentDir, 'slack-replies', 'failed');
+            mkdirSync(failedDir, { recursive: true, mode: 0o700 });
+            renameSync(fullPath, join(failedDir, file));
+            console.error('[slack] queued reply failed permanently', request.channel, request.thread_ts,
+              result.error ?? 'unknown error');
+            continue;
+          }
+
+          request.attempts = attempts;
+          request.nextAttemptAt = Date.now() + Math.min(60_000, 2_000 * 2 ** (attempts - 1));
+          writeFileSync(fullPath, JSON.stringify(request), { mode: 0o600 });
+          console.error('[slack] queued reply retry scheduled', request.channel, request.thread_ts, result.error);
+        } catch (e) {
+          try {
+            const failedDir = join(agentDir, 'slack-replies', 'failed');
+            mkdirSync(failedDir, { recursive: true, mode: 0o700 });
+            renameSync(fullPath, join(failedDir, file));
+          } catch {
+            /* best-effort quarantine */
+          }
+          console.error('[slack] invalid queued reply quarantined:', e instanceof Error ? e.message : String(e));
+        }
+      }
+    }
+  } finally {
+    slackReplyQueuePolling = false;
+  }
+}
+
+function startSlackReplyQueueObserver(): void {
+  if (slackReplyQueueTimer) return;
+  slackReplyQueueTimer = setInterval(() => { void pollSlackReplyQueue(); }, 1000);
+}
+
+function stopSlackReplyQueueObserver(): void {
+  if (slackReplyQueueTimer) {
+    clearInterval(slackReplyQueueTimer);
+    slackReplyQueueTimer = null;
+  }
+}
+
 /** The single in-thread summary for a finished task. Sourced from the task's
  *  result/description (falling back to the title), trimmed Slack-friendly. */
 function slackDoneSummary(task: HiveTask): string {
@@ -1731,6 +1862,7 @@ async function startSlackServer(): Promise<{ ok: boolean; url?: string; error?: 
   // Begin watching the kanban for Slack-origin tasks that reach 'done', to post
   // their one summary reply in-thread. OUTBOUND-only; never touches ingestion.
   startSlackDoneObserver();
+  startSlackReplyQueueObserver();
   analytics.trackFeature('slack_trigger');
   return res;
 }
@@ -1769,6 +1901,7 @@ function stopSlackServer(): void {
   try { slackReplyServer?.stop(); } catch (e) { console.error('[slack] reply stop failed:', e); }
   slackReplyServer = null;
   stopSlackDoneObserver();
+  stopSlackReplyQueueObserver();
   try { if (existsSync(slackReplyConfigPath())) unlinkSync(slackReplyConfigPath()); } catch { /* noop */ }
 }
 
@@ -2791,6 +2924,7 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
           // W3 — default-MCP consent state + the bundled skills source dir.
           mcpDefaults: readConfig().mcpDefaults,
           skillsDir: skillsResourceDir(),
+          slackReplyScript: slackReplyScriptPath(),
           // The shared palace is mutated by the agent's own `mempalace` calls, so
           // the OS sandbox must let it through (empty when memory is off).
           extraWritableDirs: [memory.env().MEMPALACE_PALACE_PATH].filter((p): p is string => !!p)
@@ -3558,6 +3692,9 @@ const MODEL_CATALOG_CACHE = () => join(app.getPath('userData'), 'model-catalog.j
 ipcMain.handle('models:catalog', async (_evt, force: unknown) =>
   loadModelCatalog(MODEL_CATALOG_CACHE(), { force: force === true }));
 
+ipcMain.handle('models:opencode-local', async (_evt, force: unknown) => ({
+  models: await loadOpenCodeModels({ force: force === true })
+}));
 // ─── IPC: skills (installed locally, and the browsable catalog) ─────────────
 /** Skills the CLIs on this machine can already use. Scans the registered repos
  *  plus the agent's own cwd, so a project-scoped skill shows up where it applies. */

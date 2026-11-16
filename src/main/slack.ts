@@ -228,18 +228,36 @@ export class SlackWebhookServer {
 
   private handleBody(req: IncomingMessage, res: ServerResponse, rawBody: string): void {
     // 1) Authenticate over the RAW body BEFORE parsing. Any failure → 403.
-    if (!this.verify(req, rawBody)) { res.writeHead(403); res.end(); return; }
+    if (!this.verify(req, rawBody)) {
+      // Do not log the signing secret, signature, timestamp, or request body.
+      console.error('[slack] rejected request: invalid signature or timestamp', {
+        hasSignature: typeof req.headers['x-slack-signature'] === 'string',
+        hasTimestamp: typeof req.headers['x-slack-request-timestamp'] === 'string'
+      });
+      res.writeHead(403); res.end(); return;
+    }
 
     let payload: SlackPayload;
     try { payload = JSON.parse(rawBody) as SlackPayload; }
-    catch { res.writeHead(400); res.end(); return; }
+    catch {
+      console.error('[slack] rejected request: body is not valid JSON');
+      res.writeHead(400); res.end(); return;
+    }
 
     // 2) URL verification handshake — echo the challenge back.
-    if (payload.type === 'url_verification' && typeof payload.challenge === 'string') {
-      res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ challenge: payload.challenge }));
+    if (payload.type === 'url_verification') {
+      if (typeof payload.challenge !== 'string') {
+        console.error('[slack] URL verification payload has no string challenge');
+        res.writeHead(400); res.end(); return;
+      }
+      // Echo the challenge exactly, without a JSON wrapper.
+      console.log(`[slack] URL verification challenge received; replying (${payload.challenge.length} chars)`);
+      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+      res.end(payload.challenge);
       return;
     }
+
+    console.log(`[slack] received verified payload type=${payload.type ?? 'unknown'}`);
 
     // 3) Real events: only @-mentions or replies in activated threads — not every
     //    plain channel message. Cache the bot user id from authorizations so we

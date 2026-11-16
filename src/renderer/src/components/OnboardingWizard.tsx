@@ -12,6 +12,7 @@ import {
 } from '@shared/engineAvailability';
 import type { ToolStatus } from '@shared/toolCatalog';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
+import { useModelCatalog } from '@/hooks/useModelCatalog';
 
 export interface OnboardingWizardProps {
   onComplete: (config: HarnessConfig) => void;
@@ -88,6 +89,7 @@ const PROVIDER_BLURB_KEYS: Partial<Record<AgentProvider, string>> = {
 };
 
 export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
+  useModelCatalog();
   const { t } = useTranslation();
   // Onboarding runs before god exists in the store, so read the persisted name.
   const godName = useResolvedGodName();

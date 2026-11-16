@@ -12,6 +12,7 @@
  * never wait on the network.
  */
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { execFile } from 'node:child_process';
 import { dirname } from 'node:path';
 import { getText } from './fetchText';
 import { parseModelCatalog, type ModelCatalog } from '../shared/modelCatalogPayload';
@@ -23,6 +24,62 @@ const CATALOG_URL =
  *  every command field in the app stays editable. Six hours matches the hero
  *  payload; a launch after that refreshes in the background. */
 const TTL_MS = 6 * 60 * 60 * 1000;
+
+const OPENCODE_MODELS_TTL_MS = 5 * 60 * 1000;
+const OPENCODE_MODELS_TIMEOUT_MS = 20000;
+const OPENCODE_MODELS_MAX_BUFFER = 256 * 1024;
+let cachedOpenCodeModels: { models: { id: string; label: string }[]; fetchedAt: number } | null = null;
+
+export interface OpenCodeModelOption {
+  id: string;
+  label: string;
+}
+
+export function parseOpenCodeModels(output: string): OpenCodeModelOption[] | null {
+  const models: OpenCodeModelOption[] = [];
+  const seen = new Set<string>();
+  for (const rawLine of output.split(/\r?\n/)) {
+    const id = rawLine.trim();
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]*(?:\/[A-Za-z0-9~][A-Za-z0-9._:~-]*)+$/.test(id)) continue;
+    if (id.length > 160 || seen.has(id)) continue;
+    seen.add(id);
+    models.push({ id, label: id });
+  }
+  return models.length ? models : null;
+}
+
+function runOpenCodeModels(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile('opencode', ['models'], {
+      shell: false,
+      windowsHide: true,
+      timeout: OPENCODE_MODELS_TIMEOUT_MS,
+      maxBuffer: OPENCODE_MODELS_MAX_BUFFER,
+      encoding: 'utf8'
+    }, (error, stdout) => error ? reject(error) : resolve(stdout));
+  });
+}
+
+export async function loadOpenCodeModels(
+  opts: { force?: boolean; run?: () => Promise<string>; now?: () => number } = {}
+): Promise<OpenCodeModelOption[] | null> {
+  const now = opts.now ?? Date.now;
+  if (!opts.force && cachedOpenCodeModels && now() - cachedOpenCodeModels.fetchedAt < OPENCODE_MODELS_TTL_MS) {
+    return cachedOpenCodeModels.models;
+  }
+  try {
+    const models = parseOpenCodeModels(await (opts.run ?? runOpenCodeModels)());
+    if (!models) return null;
+    cachedOpenCodeModels = { models, fetchedAt: now() };
+    return models;
+  } catch {
+    return null;
+  }
+}
+
+export function clearOpenCodeModelsCache(): void {
+  cachedOpenCodeModels = null;
+}
 
 export interface RemoteCatalogResult {
   /** null = nothing usable came back; the caller keeps its baked catalog. */

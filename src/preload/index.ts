@@ -796,6 +796,9 @@ const api = {
   modelCatalog: (force?: boolean): Promise<{
     catalog: ModelCatalog | null; fetchedAt: number; stale: boolean;
   }> => ipcRenderer.invoke('models:catalog', force),
+  openCodeLocalModels: (force?: boolean): Promise<{
+    models: { id: string; label: string }[] | null;
+  }> => ipcRenderer.invoke('models:opencode-local', force),
   /** Skills already installed for the coding agents on this machine. */
   skillsLocal: (cwd?: string): Promise<LocalSkill[]> => ipcRenderer.invoke('skills:local', cwd),
   /** The browsable skills catalog (cached; `force` re-fetches). */

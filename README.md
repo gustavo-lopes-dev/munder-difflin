@@ -64,6 +64,12 @@ countries and as low as $100 a year. <a href="https://app.harnessmd.com/console/
 ---
 
 > [!NOTE]
+> **Este fork inclui ajustes para Linux/Ubuntu**, especialmente respostas do Codex a threads do
+> Slack em ambientes sem sudo e com restrições de sandbox. Veja o [guia deste fork](#linux-ubuntu).
+> Os links de downloads, planos e releases do projeto original abaixo continuam sendo do upstream;
+> eles não distribuem estas alterações. Para usá-las, execute este fork a partir do código-fonte.
+
+> [!NOTE]
 > **The world's best agents. The world's worst paper company.**
 > Munder Difflin takes the terminal-agent CLIs you already run (`claude`, `agy`, `codex`, `grok`,
 > `kimi`, `qwen`, `opencode`, `crush`, `pi`, and `copilot`) and turns them
@@ -78,6 +84,7 @@ countries and as low as $100 a year. <a href="https://app.harnessmd.com/console/
 - [How it works](#how-it-works)
 - [Features](#features)
 - [Getting started](#getting-started)
+- [Linux/Ubuntu: contexto e funcionamento deste fork](#linux-ubuntu)
 - [Architecture & project structure](./docs/ARCHITECTURE.md)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
@@ -112,7 +119,7 @@ Plus **bring your own keys** and **local models** through Ollama, LM Studio or v
 ## What it is
 
 Munder Difflin is a desktop app that wraps **real terminal-agent CLIs** as fully-capable agents,
-wires them into a **hive mind**, and puts **your clone** in charge. Michael is the one agent *you*
+wires them into a **hive mind**, and puts **your clone** in charge. Michael is the one agent _you_
 talk to in order to get things done. Under the hood it runs the **fastest memory layer in the
 world** so every agent remembers what it learns and recalls it instantly.
 
@@ -150,7 +157,7 @@ world** so every agent remembers what it learns and recalls it instantly.
    `outbox/`; the harness's router delivers into recipients' `inbox/`. No agent ever touches git
    (single-committer design avoids `index.lock` corruption).
 3. **The GOD agent runs the floor**: it reads every request, resolves routine ones itself (keeping
-   the system fully autonomous), and only escalates *critical* items (spend, destructive ops, scope
+   the system fully autonomous), and only escalates _critical_ items (spend, destructive ops, scope
    changes) into an approvals queue you act on.
 4. **Everything is visible**: you watch avatars move, envelopes fly, and the live terminal stream;
    you can type back into any session, browse its files, and read its git history.
@@ -280,6 +287,7 @@ than sending you to a docs page.
 </table>
 
 **The floor**
+
 - **Every terminal is a real agent.** Claude Code, Antigravity (Gemini), OpenAI Codex, xAI Grok, Kimi Code, Gemini CLI, Qwen, OpenCode, Crush, pi.dev, GitHub Copilot CLI, Cursor, or a custom command, each in its own `node-pty` PTY, rendered with xterm.js.
 - **Every agent is an avatar.** A Pixi.js office floor where agents walk to stations, envelopes fly desk to desk, and avatar state reflects real work.
 - **A GOD orchestrator you talk to.** It routes tasks, adjudicates traffic, and escalates only what needs a human. Or press **Talk** and run the floor by voice.
@@ -287,22 +295,26 @@ than sending you to a docs page.
 - **More than one floor** (0.5.3). File, New Floor opens another office on its own folder, in its own window, with its own agents, board and memory. A folder only ever opens in one floor, and one licence covers them all.
 
 **Memory & coordination**
+
 - **The hive**: per-agent memory, atomic-file mailboxes, a shared blackboard, an append-only event log, single-committer git.
 - **Semantic recall**: markdown memory mined into a shared palace, searchable from the UI, with condensation so it doesn't grow forever.
 - **Enterprise Knowledge Graph**: your own documents and policies, queryable by any agent.
 
 **Control & safety**
+
 - **Human gates**: spend, scope, and destructive ops escalate to you. Steer mid-run or stop gracefully.
 - **Circuit breaker**: a steer → constrain → stop ladder for agents that loop, storm errors, or blow their budget.
 - **Budgets & telemetry**: per-agent token budgets, real cost from transcripts, a durable ledger, OTel spans, and a tool waterfall.
 
 **Command Center**
+
 - **Tickets with keys** (0.5.3): every card gets a key like V53-299, each agent has a Tasks tab with what it did and when, and the Tasks screen filters by date.
 - Kanban tasks with dependencies, scheduled missions + heartbeat, live fleet monitoring, memory search, activity log, and a CI watcher.
 - **Skills**: what every agent can already do across Claude Code, OpenCode and Codex, plus a browsable catalog of 227 more with search, filters, install and uninstall.
 - **Built-in Monaco IDE**: file tree, editor tabs, save, plus CHANGES · HISTORY · COMPARE git rails with commit graph, diffs, branch compare, and guarded checkout. All fs/git access brokered through main.
 
 **Getting work in and out**
+
 - **Slack & webhooks**: message a channel or POST a webhook; Michael can spawn an ephemeral worker, reply in-thread, and tear it down.
 - **Shareable hires + Agent Gallery**: import a role from a `munderdifflin://hire` link; import only pre-fills the form, a human still spawns it. Browse roles at the [Agent Gallery](https://munderdiffl.in/hires/).
 - **Local transcription and dictation** (0.5.3): dictate into any app (Option on the Mac,
@@ -401,8 +413,8 @@ Everything below is for contributors and for people who want to run an unrelease
   **Crush** (`crush`), **pi.dev** (`pi`), **GitHub Copilot** (`copilot`), or **Cursor** (`cursor-agent`).
   Most missing CLIs self-heal: the harness runs the installer in the
   terminal and continues into the new binary.
-- *Optional:* **your own API keys and local LLMs** in **Settings → AI Engines** (Ollama / LM Studio / vLLM).
-- *Optional:* the semantic memory index for instant cross-session recall. Markdown memory works without it.
+- _Optional:_ **your own API keys and local LLMs** in **Settings → AI Engines** (Ollama / LM Studio / vLLM).
+- _Optional:_ the semantic memory index for instant cross-session recall. Markdown memory works without it.
 
 ### Install & run
 
@@ -415,6 +427,85 @@ npm run dev        # launches the Electron app with hot reload
 
 On first launch you'll go through the onboarding wizard, then land on the floor. Use **Add agent** to
 spawn your first session. The GOD agent seats itself in Michael's office automatically.
+
+<a id="linux-ubuntu"></a>
+
+### Linux/Ubuntu: contexto e funcionamento deste fork
+
+Este fork foi adaptado a uma estação Linux/Ubuntu sem acesso a sudo. O cenário que motivou a
+mudança foi a integração Slack → túnel → Munder → Codex: a mensagem chegava ao agente, mas a
+resposta falhava antes de iniciar o comando de envio:
+
+```text
+filesystem-restricted execution requires bubblewrap to isolate app-server sockets
+```
+
+O túnel resolve a entrada de eventos, não a execução de comandos pelo agente. Nesse cenário,
+trocar o token do bot ou o endereço do túnel não corrige a falha do sandbox.
+
+**Como a resposta funciona agora:**
+
+1. O Munder registra no `CODEX_HOME` de cada agente Codex o servidor MCP local `munder_slack`.
+2. O agente chama `munder_slack.reply` com `channel`, `thread_ts` e `text`, sem abrir um shell.
+3. A ferramenta escreve em `<harnessHome>/hive/agents/<agent>/slack-replies/pending/`.
+4. O processo principal do Munder envia a mensagem ao Slack e move o arquivo para `sent/`.
+   Falhas transitórias têm retentativas; pedidos inválidos ou falhas definitivas vão para `failed/`.
+
+O MCP usa o Node embutido no Electron e não precisa de `node` no PATH do agente. O token do bot
+permanece no processo principal; não é passado ao modelo nem gravado na fila. O helper de linha
+de comando continua disponível, com fallback para a mesma fila quando o endpoint local não pode
+ser acessado. **Enfileirado não significa entregue:** o Munder precisa estar aberto, com a
+integração Slack habilitada, um bot válido e acesso de rede ao Slack.
+
+**Instalação deste fork:**
+
+Com Git, Node.js 18+, npm, as dependências nativas do Electron e a toolchain C/C++ já disponíveis:
+
+```bash
+git clone --branch feature/linux-ubuntu-slack https://github.com/gustavo-lopes-dev/munder-difflin.git
+cd munder-difflin
+npm ci
+npm run dev
+```
+
+Instale e autentique o Codex no ambiente do usuário. Em Settings → Slack, configure seu próprio
+bot, signing secret, canal e a URL de eventos fornecida pelo túnel. Depois, abra o Michael com
+Codex e mencione o bot no Slack. Nenhum token ou caminho pessoal precisa ser copiado do ambiente
+do autor deste fork. A ponte MCP em si não exige sudo; instalar pré-requisitos ausentes ainda
+depende das permissões da máquina.
+
+**Aprovação e sessões existentes:** a configuração gerada pré-aprova somente `reply`, com
+`[mcp_servers.munder_slack.tools.reply]` e `approval_mode = "approve"`. Isso evita o erro
+`MCP tool call requires approval, but approval policy is never`, sem liberar outras ferramentas.
+Essa permissão permite publicar no canal/thread informados, não apenas no canal mostrado no
+exemplo; habilite a integração somente para agentes e ambientes confiáveis.
+
+Ao atualizar uma sessão já existente, feche o aplicativo, pare uma vez o daemon daquele agente
+e abra o Munder novamente. Use o **Harness home configurado na sua instalação**, não um caminho
+de outra máquina. Por exemplo, se o Harness home for `$HOME/HarnessAgents` e o agente for `god`:
+
+```bash
+CODEX_HOME="$HOME/HarnessAgents/hive/agents/god/.codex" codex app-server daemon stop
+npm run dev
+```
+
+Não é necessário parar o daemon em toda inicialização; isso serve para carregar mudanças de
+configuração em um daemon antigo.
+
+> [!WARNING]
+> Neste fork, `npm run dev` define `ELECTRON_DISABLE_SANDBOX=1` para permitir o desenvolvimento
+> local neste ambiente Linux restrito. Isso reduz a proteção do **Electron/Chromium** e não deve
+> ser tratado como uma configuração de produção. O sandbox do **Codex** é separado: a ponte MCP
+> não o desativa nem corrige a execução de outros comandos bloqueados. Não use wrappers que
+> apenas simulam `bwrap` como se fossem isolamento real.
+
+**Escopo validado:** respostas em threads com Codex no Linux/Ubuntu, incluindo a configuração de
+aprovação nas versões 0.162.1 e 0.169.0. Outros provedores mantêm o helper anterior; a ponte MCP
+não foi instalada para eles. Estas alterações não foram validadas no macOS/Windows, e a atribuição
+de variável do script `dev` usa sintaxe de shell POSIX. O catálogo de modelos do OpenCode também
+consulta `opencode models` localmente, com fallback para o catálogo existente se a CLI falhar.
+O autoatualizador e o catálogo remoto herdados continuam apontando para o upstream; não há
+instaladores próprios publicados por este fork.
 
 ### Other scripts
 
@@ -517,13 +608,13 @@ source, forks compile with no key and send nothing) are documented in
 
 The **source code** is licensed under the **MIT License**. See [`LICENSE`](./LICENSE). The MIT grant
 covers the code only; the bundled pixel art is licensed separately from LimeZu and is carved out in
-[`LICENSE-ASSETS`](./LICENSE-ASSETS). *Munder Difflin* is an affectionate parody and is not affiliated with NBC's *The Office* or
+[`LICENSE-ASSETS`](./LICENSE-ASSETS). _Munder Difflin_ is an affectionate parody and is not affiliated with NBC's _The Office_ or
 Dunder Mifflin.
 
 ## Acknowledgements
 
-- [LimeZu](https://limezu.itch.io/) for the *Modern Interiors* pixel-art tilesets (Complete Version licence).
+- [LimeZu](https://limezu.itch.io/) for the _Modern Interiors_ pixel-art tilesets (Complete Version licence).
 - [`shahar061/the-office`](https://github.com/shahar061/the-office) for the office tileset/map vendoring.
 - [Pixi.js](https://pixijs.com/) · [xterm.js](https://xtermjs.org/) · [node-pty](https://github.com/microsoft/node-pty) · [electron-vite](https://electron-vite.org/) · [CodeMirror](https://codemirror.net/) for the libraries this is built on.
 - [Remotion](https://www.remotion.dev/) for the landing page's animated "how it works" clips (`landing-remotion/`).
-- *The Office* (US) for Munder Difflin, Inc.
+- _The Office_ (US) for Munder Difflin, Inc.

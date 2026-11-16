@@ -241,6 +241,12 @@ const BAKED: ModelCatalog = modelCatalog;
  *  `const`, is the whole mechanism: everything below reads it through a
  *  function call, so a refresh reaches the next render with no plumbing. */
 let CATALOG: ModelCatalog = BAKED;
+let LOCAL_OPENCODE_MODELS: ModelCatalog['providers']['opencode'] | null = null;
+
+function catalogWithLocalOpenCodeModels(catalog: ModelCatalog): ModelCatalog {
+  if (!LOCAL_OPENCODE_MODELS) return catalog;
+  return { ...catalog, providers: { ...catalog.providers, opencode: LOCAL_OPENCODE_MODELS } };
+}
 
 /** Merge a validated remote catalog over the baked one.
  *
@@ -253,12 +259,27 @@ let CATALOG: ModelCatalog = BAKED;
  *  Returns whether anything actually changed, so the caller can skip a pointless
  *  event on the overwhelmingly common "nothing new" path. */
 export function applyRemoteModelCatalog(remote: ModelCatalog | null): boolean {
-  const next: ModelCatalog = remote
+  const base: ModelCatalog = remote
     ? { version: BAKED.version, providers: { ...BAKED.providers, ...remote.providers } }
     : BAKED;
+  const next = catalogWithLocalOpenCodeModels(base);
   if (JSON.stringify(next) === JSON.stringify(CATALOG)) return false;
   CATALOG = next;
   return true;
+}
+
+export function applyLocalOpenCodeModels(models: { id: string; label: string }[] | null): boolean {
+  if (!models?.length) return false;
+  const next = [{ label: 'CLI default' }, ...models.map(({ id, label }) => ({ id, label }))];
+  if (JSON.stringify(next) === JSON.stringify(LOCAL_OPENCODE_MODELS)) return false;
+  LOCAL_OPENCODE_MODELS = next;
+  CATALOG = catalogWithLocalOpenCodeModels(CATALOG);
+  return true;
+}
+
+export function clearLocalOpenCodeModels(): void {
+  LOCAL_OPENCODE_MODELS = null;
+  CATALOG = BAKED;
 }
 
 /** Fired on `window` after the catalog changes, so a surface holding a rendered
@@ -273,10 +294,18 @@ export const MODEL_CATALOG_EVENT = 'cth:model-catalog';
  *  Settings action can force a refresh, and so the tests can drive it. */
 export async function refreshModelCatalog(force = false): Promise<boolean> {
   try {
-    const bridge = (globalThis as { cth?: { modelCatalog?: (force?: boolean) => Promise<{ catalog: ModelCatalog | null }> } }).cth;
-    if (!bridge?.modelCatalog) return false;
-    const { catalog } = await bridge.modelCatalog(force);
-    const changed = applyRemoteModelCatalog(catalog);
+    const bridge = (globalThis as { cth?: {
+      modelCatalog?: (force?: boolean) => Promise<{ catalog: ModelCatalog | null }>;
+      openCodeLocalModels?: (force?: boolean) => Promise<{ models: { id: string; label: string }[] | null }>;
+    } }).cth;
+    if (!bridge?.modelCatalog && !bridge?.openCodeLocalModels) return false;
+    const [remoteResult, localResult] = await Promise.all([
+      bridge.modelCatalog?.(force).catch(() => null),
+      bridge.openCodeLocalModels?.(force).catch(() => null)
+    ]);
+    let changed = false;
+    if (remoteResult) changed = applyRemoteModelCatalog(remoteResult.catalog) || changed;
+    if (localResult) changed = applyLocalOpenCodeModels(localResult.models) || changed;
     if (changed && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent(MODEL_CATALOG_EVENT));
     }

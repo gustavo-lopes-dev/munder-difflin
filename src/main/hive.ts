@@ -729,6 +729,8 @@ export class HiveManager {
        *  copied into the agent's `.claude/skills/` per spawn; undefined or missing
        *  is a no-op (tolerated until Kevin populates the resource dir). */
       skillsDir?: string;
+      /** Host-side Slack MCP helper, so replies don't require a sandboxed shell. */
+      slackReplyScript?: string;
       /** Extra directories the agent's sandbox may write (e.g. the shared
        *  MemPalace dir, which `mempalace` mutates). Absolute paths; ignored
        *  for providers without a sandbox. */
@@ -871,7 +873,7 @@ export class HiveManager {
           if (desc.kind === 'hooks') {
             if (desc.shim === 'agy') this.installAgyHooks();
             else if (desc.shim === 'codex') {
-              env.CODEX_HOME = this.installCodexHooks(dir, meta.id);
+              env.CODEX_HOME = this.installCodexHooks(dir, meta.id, opts.slackReplyScript);
               // Codex refuses to run hooks from a config dir without persisted
               // "hook trust" (normally an interactive gate). Our hooks.json is
               // hive-authored inside an isolated CODEX_HOME, so we bypass that gate
@@ -2190,7 +2192,7 @@ export class HiveManager {
    *  ~/.codex/auth.json is linked in and their config.toml is copied + extended
    *  (login + model/provider/trust settings still apply).
    *  Returns the CODEX_HOME path for the caller to put in the worker's env. */
-  private installCodexHooks(dir: string, agentId: string): string {
+  private installCodexHooks(dir: string, agentId: string, slackReplyScript?: string): string {
     const home = join(dir, '.codex');
     try {
       mkdirSync(home, { recursive: true });
@@ -2259,6 +2261,19 @@ export class HiveManager {
         for (const ev of events) {
           config += `\n[[hooks.${ev}]]\n[[hooks.${ev}.hooks]]\ntype = "command"\ncommand = ${JSON.stringify(command)}\ntimeout = 30\n`;
         }
+      }
+      if (slackReplyScript && existsSync(slackReplyScript)) {
+        // MCP is launched by the host, not the shell tool: this works even when
+        // Linux cannot create the bubblewrap sandbox. Never relax that sandbox.
+        // Electron's bundled Node also works with a stripped PATH, including Windows.
+        config += '\n[mcp_servers.munder_slack]\n';
+        config += `command = ${JSON.stringify(process.execPath)}\n`;
+        config += `args = ${JSON.stringify([slackReplyScript, '--mcp', '--agent-dir', dir])}\n`;
+        config += 'enabled_tools = ["reply"]\n';
+        // Sending is a write, so Codex otherwise asks for approval and rejects
+        // it under -a never. Preapprove ONLY this tool, not other MCP tools.
+        config += '[mcp_servers.munder_slack.tools.reply]\napproval_mode = "approve"\n';
+        config += '[mcp_servers.munder_slack.env]\nELECTRON_RUN_AS_NODE = "1"\n';
       }
       writeFileSync(join(home, 'config.toml'), config, 'utf8');
 

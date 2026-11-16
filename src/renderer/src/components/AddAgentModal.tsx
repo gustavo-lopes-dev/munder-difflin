@@ -30,6 +30,7 @@ import {
   isClaudeProvider
 } from '@/store/config';
 import { useRtl } from '@/i18n/useDirection';
+import { useModelCatalog } from '@/hooks/useModelCatalog';
 
 const ACCENTS: AccentColorName[] = ['coral', 'mint', 'sky', 'lemon', 'lilac', 'peach'];
 
@@ -143,6 +144,7 @@ export interface AddAgentModalProps {
 }
 
 export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModalProps) {
+  useModelCatalog();
   const { t: tr } = useTranslation();
   const rtl = useRtl();
   const addAgent = useStore(s => s.addAgent);
