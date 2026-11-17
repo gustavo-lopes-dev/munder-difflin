@@ -32,6 +32,7 @@ import {
 import { notifyArabicTerminalChangeAll } from '@/components/terminalPool';
 import { isComposingKey } from '@shared/imeGuard';
 import { LANGUAGES, setLanguage } from '@/i18n';
+import { DEFAULT_SLACK_CONSULTATION, type SlackConsultationConfig } from '@shared/slackConsultation';
 
 export interface SettingsModalProps {
   config: HarnessConfig;
@@ -398,6 +399,10 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   // App/voice-initiated proactive posting (the "queued" ack). Default OFF —
   // the Slack-origin done-reply round-trip is unaffected by this toggle.
   const [slackProactivePosting, setSlackProactivePosting] = useState(config.slackProactivePosting ?? false);
+  const [consultation, setConsultation] = useState<SlackConsultationConfig>({
+    ...DEFAULT_SLACK_CONSULTATION,
+    ...config.slackConsultation
+  });
   const [tunnelUrl, setTunnelUrl] = useState('');
   const [slackBusy, setSlackBusy] = useState(false);
   const [slackNote, setSlackNote] = useState('');
@@ -552,6 +557,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
       setSlackChannel(cc.slackChannelId ?? '');
       setSlackPort(String(cc.slackPort ?? 3847));
       setSlackProactivePosting(cc.slackProactivePosting ?? false);
+      setConsultation({ ...DEFAULT_SLACK_CONSULTATION, ...cc.slackConsultation });
       const kgOn = (cc as { knowledgeGraph?: { enabled?: boolean } }).knowledgeGraph?.enabled === true;
       setKgEnabled(kgOn);
       setFreeflowEnabled(cc.freeflowEnabled !== false);
@@ -598,13 +604,15 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     channelId: slackChannel,
     port: Number(slackPort) || 3847,
     enabled,
-    proactivePosting: slackProactivePosting
+    proactivePosting: slackProactivePosting,
+    consultation
   });
 
   const saveSlack = async () => {
     setSlackBusy(true); setSlackNote('');
     try {
-      await window.cth.slackSetConfig(slackPatch(slackEnabled));
+      const result = await window.cth.slackSetConfig(slackPatch(slackEnabled));
+      if (!result.ok) throw new Error((result as { error?: string }).error || 'Slack configuration rejected');
       setSlackNote('saved');
     } catch (e) {
       setSlackNote(e instanceof Error ? e.message : String(e));
@@ -615,7 +623,8 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     setSlackBusy(true); setSlackNote('');
     try {
       // Persist first so the server starts with the latest secret/port/channel.
-      await window.cth.slackSetConfig(slackPatch(true));
+      const result = await window.cth.slackSetConfig(slackPatch(true));
+      if (!result.ok) throw new Error((result as { error?: string }).error || 'Slack configuration rejected');
       setSlackEnabled(true);
       const res = await window.cth.slackStart();
       if (res.ok) {
@@ -1565,6 +1574,145 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                                 {slackProactivePosting ? t('common.on') : t('common.off')}
                               </PixelButton>
                             </div>
+
+                            <fieldset
+                              style={{
+                                border: "1px solid var(--cth-ink-300)",
+                                padding: 10,
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: 8,
+                              }}
+                            >
+                              <legend style={slackLabelStyle}>
+                                External assistant consultations
+                              </legend>
+                              <label style={slackLabelStyle}>
+                                <input
+                                  type="checkbox"
+                                  checked={consultation.enabled}
+                                  onChange={(e) =>
+                                    setConsultation({
+                                      ...consultation,
+                                      enabled: e.target.checked,
+                                    })
+                                  }
+                                />{" "}
+                                Allow explicit questions to the configured
+                                assistant (separate opt-in)
+                              </label>
+                              <label style={slackLabelStyle}>
+                                Assistant channel ID
+                                <input
+                                  value={consultation.channelId}
+                                  onChange={(e) =>
+                                    setConsultation({
+                                      ...consultation,
+                                      channelId: e.target.value,
+                                    })
+                                  }
+                                  placeholder="C… or G…"
+                                  style={slackInputStyle}
+                                />
+                              </label>
+                              <label style={slackLabelStyle}>
+                                Assistant mention ID
+                                <input
+                                  value={consultation.assistantId}
+                                  onChange={(e) =>
+                                    setConsultation({
+                                      ...consultation,
+                                      assistantId: e.target.value,
+                                    })
+                                  }
+                                  placeholder="User U…/W… or user group S…"
+                                  style={slackInputStyle}
+                                />
+                              </label>
+                              <label style={slackLabelStyle}>
+                                Responder ID (required for groups; otherwise
+                                optional)
+                                <input
+                                  value={consultation.responderId ?? ""}
+                                  onChange={(e) =>
+                                    setConsultation({
+                                      ...consultation,
+                                      responderId: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Exact user U…/W…, bot B… or app A…"
+                                  style={slackInputStyle}
+                                />
+                              </label>
+                              <label style={slackLabelStyle}>
+                                Response deadline (seconds, 15–600)
+                                <input
+                                  type="number"
+                                  min={15}
+                                  max={600}
+                                  value={consultation.timeoutSeconds}
+                                  onChange={(e) =>
+                                    setConsultation({
+                                      ...consultation,
+                                      timeoutSeconds: Number(e.target.value),
+                                    })
+                                  }
+                                  style={slackInputStyle}
+                                />
+                              </label>
+                              <label style={slackLabelStyle}>
+                                Conversation mode
+                                <select
+                                  value={
+                                    consultation.conversationMode ?? "question"
+                                  }
+                                  onChange={(e) =>
+                                    setConsultation({
+                                      ...consultation,
+                                      conversationMode: e.target.value as
+                                        "question" | "mention_then_question",
+                                    })
+                                  }
+                                  style={slackInputStyle}
+                                >
+                                  <option value="question">
+                                    Mention and question together
+                                  </option>
+                                  <option value="mention_then_question">
+                                    Mention, wait for greeting, then ask in
+                                    thread
+                                  </option>
+                                </select>
+                              </label>
+                              <label style={slackLabelStyle}>
+                                Exact greeting to ignore (required for two-step
+                                mode)
+                                <input
+                                  value={consultation.greetingText ?? ""}
+                                  onChange={(e) =>
+                                    setConsultation({
+                                      ...consultation,
+                                      greetingText: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Phrase contained in the assistant greeting (case-insensitive)"
+                                  style={slackInputStyle}
+                                />
+                              </label>
+                              <span
+                                style={{
+                                  fontSize: 12,
+                                  color: "var(--cth-ink-500)",
+                                }}
+                              >
+                                Both apps must be in the channel. Subscribe to
+                                message.channels (public) or message.groups
+                                (private), not only app_mention. Only the
+                                configured responder in a pending thread is
+                                accepted. An S… group ID alone cannot
+                                authenticate the replying bot.
+                              </span>
+                            </fieldset>
 
                             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                               {/* Start disabled once connected; Stop only when running. */}

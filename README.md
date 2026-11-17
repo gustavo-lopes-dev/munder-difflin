@@ -89,6 +89,7 @@ year. <a href="https://app.harnessmd.com/console/license">Get Pro</a></sub>
 - [Features](#features)
 - [Getting started](#getting-started)
 - [Linux/Ubuntu: contexto e funcionamento deste fork](#linux-ubuntu)
+  - [Slack: ngrok com domínio fixo e sem sudo](#ngrok-sem-sudo)
 - [Architecture & project structure](./docs/ARCHITECTURE.md)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
@@ -545,6 +546,180 @@ de variável do script `dev` usa sintaxe de shell POSIX. O catálogo de modelos 
 consulta `opencode models` localmente, com fallback para o catálogo existente se a CLI falhar.
 O autoatualizador e o catálogo remoto herdados continuam apontando para o upstream; não há
 instaladores próprios publicados por este fork.
+
+<a id="ngrok-sem-sudo"></a>
+
+#### Slack: ngrok com domínio fixo e sem sudo
+
+Para não vigiar o terminal nem alterar a Request URL do Slack a cada queda do túnel,
+use um **domínio HTTPS fixo do ngrok** e um **serviço systemd do usuário**. Nenhuma etapa
+abaixo exige sudo. Isso não fornece um IP público estático: o hostname permanece igual
+mesmo quando o IP da sua internet muda, o que basta para o callback do Slack.
+
+**Pré-requisitos:** Linux com `curl`, `tar` e systemd de usuário disponíveis; Munder
+aberto, com a conexão Slack iniciada e o callback escutando na porta `3847` (ou a porta
+configurada na sua instalação). Os comandos podem ser executados fora do repositório.
+
+**1. Conta e domínio fixo**
+
+Crie sua conta no [ngrok](https://dashboard.ngrok.com/signup) e abra
+[Domains](https://dashboard.ngrok.com/domains). Localize o **Dev Domain** atribuído à
+conta, semelhante a `nome-atribuido.ngrok-free.dev`. Conforme a
+[documentação de domínios](https://ngrok.com/docs/universal-gateway/domains), contas
+gratuitas também recebem esse hostname estático; o nome é atribuído pelo ngrok.
+Não é necessário comprar domínio ou configurar DNS. Planos gratuitos têm limites de uso.
+
+Nos comandos abaixo, substitua **`SEU_DOMINIO` pelo hostname real**, sem duplicar
+`https://`. Não use literalmente o nome de exemplo.
+
+**2. Instalação na pasta pessoal**
+
+Confira a arquitetura:
+
+```bash
+uname -m
+```
+
+Para **`x86_64`**, instale o binário em `~/.local/bin`. Se já houver um ngrok nesse
+caminho, confira sua versão antes de decidir substituí-lo:
+
+```bash
+mkdir -p "$HOME/.local/bin"
+
+curl -fsSL \
+  https://bin.ngrok.com/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz \
+  | tar -xz -C "$HOME/.local/bin" ngrok
+
+chmod u+x "$HOME/.local/bin/ngrok"
+"$HOME/.local/bin/ngrok" version
+```
+
+Para `aarch64`/ARM ou outra arquitetura, use o pacote correspondente do
+[download oficial para Linux](https://ngrok.com/download/linux), não o AMD64 acima.
+O caminho completo dispensa alterações no `PATH`.
+
+**3. Autenticação local**
+
+Abra [Your Authtoken](https://dashboard.ngrok.com/get-started/your-authtoken) e
+execute no terminal local:
+
+```bash
+"$HOME/.local/bin/ngrok" config add-authtoken "SEU_AUTHTOKEN"
+"$HOME/.local/bin/ngrok" config check
+```
+
+O token é secreto: não o envie a agentes, não o publique e não versione a configuração.
+O comando de autenticação pode ficar no histórico do shell; use as políticas locais
+de proteção de credenciais. `config check` mostra o caminho do arquivo de configuração.
+O padrão no Linux é `~/.config/ngrok/ngrok.yml`, mas `XDG_CONFIG_HOME` pode alterá-lo.
+
+**4. Teste manual e configuração do Slack**
+
+```bash
+"$HOME/.local/bin/ngrok" http http://127.0.0.1:3847 \
+  --url=https://SEU_DOMINIO \
+  --inspect=false
+```
+
+O encaminhamento deve apontar do domínio HTTPS fixo para `http://127.0.0.1:3847`.
+`--inspect=false` desativa a inspeção local dos conteúdos das requisições; o tráfego
+ainda passa pelo provedor do túnel.
+
+Na [Slack App](https://api.slack.com/apps), abra **Event Subscriptions → Request URL**.
+Substitua apenas a origem pública do LocalTunnel pela do ngrok, preservando qualquer
+caminho do callback exibido pelo Munder. Aguarde **Verified** e salve. Não adicione
+login interativo na frente do callback nem desative a verificação da assinatura Slack.
+Depois da migração, encerre o antigo LocalTunnel quando não houver consultas pendentes.
+
+Exponha **somente a porta do callback**. Não exponha a porta interna do broker de
+consultas, o OpenCode ou a interface administrativa do ngrok.
+
+**5. Execução automática sem terminal aberto**
+
+Após o teste, pressione **Ctrl+C no terminal desse ngrok** para não iniciar dois
+processos disputando o mesmo domínio. Crie ou edite o serviço, preservando configurações
+preexistentes se o arquivo já existir:
+
+```bash
+mkdir -p "$HOME/.config/systemd/user"
+nano "$HOME/.config/systemd/user/munder-ngrok.service"
+```
+
+Conteúdo:
+
+```ini
+[Unit]
+Description=Tunel ngrok para callback Slack do Munder
+StartLimitIntervalSec=0
+
+[Service]
+ExecStart=%h/.local/bin/ngrok http http://127.0.0.1:3847 --url=https://SEU_DOMINIO --inspect=false --config=%h/.config/ngrok/ngrok.yml
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+```
+
+Substitua o domínio e ajuste a porta se necessário. Confirme o caminho de `--config`
+com o resultado de `ngrok config check`; `%h` representa sua pasta pessoal.
+O token fica no arquivo privado do ngrok, **não no arquivo de serviço**.
+
+Ative o serviço:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now munder-ngrok.service
+```
+
+`Restart=always` reinicia inclusive após uma saída com código `0`; `RestartSec=5`
+aguarda cinco segundos entre tentativas. O serviço inicia ao entrar na sessão Linux
+e não depende de terminal aberto. Ele não inicia o Munder nem garante funcionamento
+após logout. Execução antes do login ou após logout pode exigir liberação administrativa.
+Suspensão do computador, falha de rede e limites do plano também afetam a disponibilidade.
+
+**6. Validação e manutenção**
+
+```bash
+systemctl --user is-active munder-ngrok.service
+systemctl --user status munder-ngrok.service
+journalctl --user -u munder-ngrok.service -n 40 --no-pager
+ss -ltn 'sport = :3847'
+```
+
+Espere `active` no serviço e `LISTEN` na porta do callback. Esses sinais não comprovam
+a integração completa: confira também **Verified** no Slack e, com autorização, faça
+uma única consulta curta e não sensível ao maestro. Verifique mensagem na thread,
+resposta do remetente esperado e updates `sent`, `question_sent` e `received` nas
+sessões corretas (no modo com saudação). O `probe` de `md_slack_consult` testa somente
+o broker local, **não o túnel nem o callback público**.
+
+Sem consultas pendentes, teste um reinício:
+
+```bash
+systemctl --user restart munder-ngrok.service
+systemctl --user status munder-ngrok.service
+```
+
+O domínio deve continuar igual, sem editar a Request URL do Slack. Outros comandos:
+
+```bash
+journalctl --user -u munder-ngrok.service -f
+systemctl --user stop munder-ngrok.service
+systemctl --user disable --now munder-ngrok.service
+```
+
+`stop` para agora; `disable --now` também desabilita o início automático.
+Se ocorrer **Failed to connect to bus**, verifique a disponibilidade da sessão
+systemd de usuário com o administrador. Erros de autenticação, domínio ocupado e
+limites do plano devem ser corrigidos; reiniciar repetidamente não resolve essas causas.
+
+**Validação realizada neste ambiente:** Linux sem sudo, ngrok como serviço do usuário,
+uma consulta ao maestro com resposta em aproximadamente 42 segundos e os três updates
+entregues na primeira tentativa. Executor e orquestrador foram a mesma sessão nessa
+checagem; ela não comprova entrega a sessões distintas nem disponibilidade contínua.
+Veja também o [guia de QA/replicação](./docs/qa-maestro-setup.pt-BR.md) e o
+[guia técnico de consultas](./docs/slack-assistant-consultations.md).
 
 ### Other scripts
 

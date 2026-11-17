@@ -79,6 +79,9 @@ export interface SlackWebhookServerOptions {
    *  coordinates needed to reply back in the originating thread. May be async
    *  (e.g. to download file attachments before forwarding via IPC). */
   onMessage: (m: SlackInboundMessage) => void | Promise<void>;
+  /** Narrow, verified consultation path, independent of the human-task channel
+   * filter. Consumed replies must never become fresh office work. */
+  onConsultationEvent?: (event: SlackPayload['event'], ownBotUserId: string | null) => boolean;
 }
 
 /** A verified, de-mentioned inbound Slack message plus the coordinates needed to
@@ -118,6 +121,7 @@ export class SlackWebhookServer {
   private readonly signingSecret: string;
   private readonly channelId?: string;
   private readonly onMessage: (m: SlackInboundMessage) => void | Promise<void>;
+  private readonly onConsultationEvent?: SlackWebhookServerOptions['onConsultationEvent'];
   /** Bot's own Slack user id — learned from `authorizations[].user_id` on the
    *  first event_callback. Used to detect <@BOTID> text mentions. */
   private botUserId: string | null = null;
@@ -135,6 +139,7 @@ export class SlackWebhookServer {
     this.signingSecret = opts.signingSecret;
     this.channelId = opts.channelId?.trim() || undefined;
     this.onMessage = opts.onMessage;
+    this.onConsultationEvent = opts.onConsultationEvent;
   }
 
   /**
@@ -268,6 +273,16 @@ export class SlackWebhookServer {
       if (authUserId && !this.botUserId) this.botUserId = authUserId;
 
       const ev = payload.event;
+      try {
+        if (this.onConsultationEvent?.(ev, this.botUserId)) {
+          res.writeHead(200); res.end(); return;
+        }
+      } catch {
+        // E.g. the durable consultation ledger could not be written. Allow
+        // Slack to retry instead of acknowledging and silently losing a reply.
+        console.error('[slack] could not persist consultation event');
+        res.writeHead(503); res.end(); return;
+      }
       const { trigger, text: rawText, files: rawFiles } = _shouldTrigger(
         ev, this.botUserId, this.channelId, this.activatedThreads
       );
@@ -338,6 +353,7 @@ interface SlackPayload {
     /** 'file_share' for file uploads; 'message_changed' / 'channel_join' etc. dropped. */
     subtype?: string;
     bot_id?: string;
+    app_id?: string;
     channel?: string;
     text?: string;
     /** Message timestamp — Slack's per-message id, used as the reply thread root. */
@@ -414,8 +430,40 @@ export function postSlackReply(opts: {
     // (its finally never runs) and hanging the loopback /reply handler. Destroy
     // with an error so the 'error' handler resolves the usual transient path.
     req.setTimeout(SLACK_API_TIMEOUT_MS, () => req.destroy(new Error('timed out')));
+    const deadline = setTimeout(() => req.destroy(new Error('Slack request deadline exceeded')), SLACK_API_TIMEOUT_MS);
+    deadline.unref?.(); req.once('close', () => clearTimeout(deadline));
     req.write(body);
     req.end();
+  });
+}
+
+/** Deliberately separate from postSlackReply: only an explicitly enabled,
+ * configured consultation may create a channel-root question. */
+export function postSlackQuestion(opts: {
+  botToken: string; channel: string; text: string;
+}): Promise<{ ok: boolean; ts?: string; error?: string; uncertain?: boolean }> {
+  if (!opts.botToken || !opts.channel.trim() || !opts.text.trim()) return Promise.resolve({ ok: false, error: 'Explicit token, channel and text required' });
+  return new Promise((resolve) => {
+    const body = JSON.stringify({ channel: opts.channel, text: opts.text, unfurl_links: false, unfurl_media: false });
+    const req = httpsRequest({
+      method: 'POST', hostname: 'slack.com', path: '/api/chat.postMessage',
+      headers: { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(body), authorization: `Bearer ${opts.botToken}` }
+    }, (res) => {
+      const chunks: Buffer[] = []; let size = 0;
+      res.on('data', (chunk: Buffer) => { size += chunk.length; if (size > MAX_BODY_BYTES) req.destroy(new Error('Slack response too large')); else chunks.push(chunk); });
+      res.on('error', () => resolve({ ok: false, error: 'Slack response interrupted; check delivery before retrying.', uncertain: true }));
+      res.on('end', () => {
+        try {
+          const result = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { ok?: boolean; ts?: string; error?: string };
+          resolve({ ok: result.ok === true, ts: result.ts, error: result.error });
+        } catch { resolve({ ok: false, error: 'Invalid Slack response; check delivery before retrying.', uncertain: true }); }
+      });
+    });
+    req.on('error', () => resolve({ ok: false, error: 'Slack request interrupted; check delivery before retrying.', uncertain: true }));
+    req.setTimeout(SLACK_API_TIMEOUT_MS, () => req.destroy(new Error('timed out')));
+    const deadline = setTimeout(() => req.destroy(new Error('Slack request deadline exceeded')), SLACK_API_TIMEOUT_MS);
+    deadline.unref?.(); req.once('close', () => clearTimeout(deadline));
+    req.write(body); req.end();
   });
 }
 
@@ -429,6 +477,11 @@ export interface SlackReplyServerOptions {
    *  this loopback. Lets main record that the thread was already answered so the
    *  done-summary poller can skip it (the poller is a fallback, not a duplicator). */
   onReplied?: (thread_ts: string) => void;
+  consultations?: {
+    create: (input: unknown) => Promise<{ ok: boolean; error?: string; consultation?: unknown }>;
+    get: (id: string) => unknown;
+    retryNotifications?: (id: string) => { ok: boolean; consultation?: unknown; error?: string };
+  };
 }
 
 /**
@@ -445,11 +498,13 @@ export class SlackReplyServer {
   private readonly token: string;
   private readonly getBotToken: () => string | undefined;
   private readonly onReplied?: (thread_ts: string) => void;
+  private readonly consultations?: SlackReplyServerOptions['consultations'];
 
   constructor(opts: SlackReplyServerOptions) {
     this.token = opts.token;
     this.getBotToken = opts.getBotToken;
     this.onReplied = opts.onReplied;
+    this.consultations = opts.consultations;
   }
 
   /** Bind a loopback port (0 ⇒ OS-assigned). Resolves the actual bound port. */
@@ -480,10 +535,29 @@ export class SlackReplyServer {
   private handle(req: IncomingMessage, res: ServerResponse): void {
     // Defense in depth: even bound loopback-only, refuse any non-loopback peer.
     if (!isLoopback(req.socket.remoteAddress ?? '')) { res.writeHead(403); res.end(); return; }
-    if (req.method !== 'POST' || (req.url ?? '').split('?')[0] !== '/reply') {
+    const route = (req.url ?? '').split('?')[0];
+    const consultationGet = req.method === 'GET' && /^\/consultations\/[a-zA-Z0-9_-]{8,100}$/.test(route);
+    const consultationPost = req.method === 'POST' && route === '/consultations';
+    const consultationRetry = req.method === 'POST' && /^\/consultations\/[a-zA-Z0-9_-]{8,100}\/retry-notifications$/.test(route);
+    if (!(req.method === 'POST' && route === '/reply') && !consultationGet && !consultationPost && !consultationRetry) {
       res.writeHead(404); res.end(); return;
     }
     if (!this.checkToken(req.headers['x-md-reply-token'])) { res.writeHead(401); res.end(); return; }
+    if (consultationGet || consultationPost || consultationRetry) {
+      if (!this.consultations) { res.writeHead(503); res.end(JSON.stringify({ ok: false, error: 'Consultation bridge unavailable' })); return; }
+      if (consultationRetry) {
+        try {
+          const result = this.consultations.retryNotifications?.(route.split('/')[2]) ?? { ok: false, error: 'Notification retry unavailable' };
+          res.writeHead(result.ok ? 200 : 400, { 'content-type': 'application/json' }); res.end(JSON.stringify(result));
+        } catch { res.writeHead(500); res.end(JSON.stringify({ ok: false, error: 'Could not persist notification retry' })); }
+        return;
+      }
+      if (consultationGet) {
+        const consultation = this.consultations.get(route.split('/')[2]);
+        res.writeHead(consultation ? 200 : 404, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(consultation ? { ok: true, consultation } : { ok: false, error: 'Unknown consultation' })); return;
+      }
+    }
 
     const chunks: Buffer[] = [];
     let size = 0;
@@ -499,6 +573,12 @@ export class SlackReplyServer {
       let parsed: { channel?: string; thread_ts?: string; text?: string };
       try { parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
       catch { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: 'bad json' })); return; }
+      if (consultationPost) {
+        void this.consultations!.create(parsed).then((result) => {
+          res.writeHead(result.ok ? 200 : 400, { 'content-type': 'application/json' }); res.end(JSON.stringify(result));
+        }).catch(() => { res.writeHead(500); res.end(JSON.stringify({ ok: false, error: 'Consultation request failed; retry only with the same id' })); });
+        return;
+      }
       const botToken = this.getBotToken();
       if (!botToken) { res.writeHead(503); res.end(JSON.stringify({ ok: false, error: 'no bot token' })); return; }
       if (!parsed.channel || !parsed.thread_ts || !parsed.text) {

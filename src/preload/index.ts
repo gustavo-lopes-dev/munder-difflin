@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
 import type { AgentProvider } from '../shared/agentProvider';
+import type { SlackConsultationConfig } from '../shared/slackConsultation';
 import type { HireManifest } from '../shared/hire';
 export type { HireManifest } from '../shared/hire';
 import type { IntegrationRecord, IntegrationTemplate } from '../shared/integrations';
@@ -296,6 +297,7 @@ export interface HarnessConfig {
   slackChannelId?: string;
   slackPort?: number;
   slackProactivePosting?: boolean;
+  slackConsultation?: SlackConsultationConfig;
   webhookEnabled?: boolean;
   webhookSecret?: string;
   webhookPort?: number;
@@ -1174,7 +1176,8 @@ const api = {
   slackSetConfig: (patch: {
     signingSecret?: string; botToken?: string; channelId?: string; port?: number; enabled?: boolean;
     proactivePosting?: boolean;
-  }): Promise<{ ok: boolean }> =>
+    consultation?: SlackConsultationConfig;
+  }): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('slack:setConfig', patch),
 
   // ─── Generic webhook + status API (POST → work, GET → status) ────────────────

@@ -35,7 +35,10 @@ import { MemoryReflector, type ReflectSettings } from './reflect';
 import { PersistStore } from './db';
 import { readAgentUsage, readContextTokens, seedSessionTranscript, resolveSessionCwd } from './transcript';
 import { listIssues, listCIRuns } from './github';
-import { SlackWebhookServer, SlackReplyServer, postSlackReply, type SlackEventFile } from './slack';
+import { SlackWebhookServer, SlackReplyServer, postSlackReply, postSlackQuestion, type SlackEventFile } from './slack';
+import { SlackConsultations } from './slackConsultations';
+import { notifyOpenCode } from './consultationNotifications';
+import { DEFAULT_SLACK_CONSULTATION, validateConsultationConfig, type SlackConsultation, type SlackConsultationConfig } from '../shared/slackConsultation';
 import {
   WebhookServer,
   type WebhookDispatch, type WebhookEndpointRef, type WebhookInbound, type WebhookTaskStatus
@@ -1386,6 +1389,42 @@ let slackServer: SlackWebhookServer | null = null;
 /** The loopback-only reply endpoint (lets the bundled helper post back to Slack
  *  without ever seeing the bot token). Lifecycle is tied to `slackServer`. */
 let slackReplyServer: SlackReplyServer | null = null;
+let slackConsultations: SlackConsultations | null = null;
+
+function consultationService(): SlackConsultations {
+  if (slackConsultations) return slackConsultations;
+  const file = join(app.getPath('userData'), 'slack-consultations.json');
+  slackConsultations = new SlackConsultations({
+    config: () => {
+      const cfg = readConfig();
+      return { ...DEFAULT_SLACK_CONSULTATION, ...cfg.slackConsultation, enabled: !!(cfg.slackEnabled && cfg.slackConsultation?.enabled) };
+    },
+    post: (channel, text) => postSlackQuestion({ botToken: readConfig().slackBotToken ?? '', channel, text }),
+    postInThread: (channel, thread_ts, text) => postSlackReply({ botToken: readConfig().slackBotToken ?? '', channel, thread_ts, text }),
+    notify: async (recipient, text, id) => {
+      if (recipient.kind === 'opencode') { await notifyOpenCode(recipient, text, id); return; }
+      if (!hive.enabled()) throw new Error('Hive is disabled');
+      const registry = hive.registry();
+      const target = recipient.id === 'god' ? registry.godId ?? 'god' : recipient.id;
+      if (!registry.agents[target] || registry.agents[target].archived) throw new Error('Notification recipient is not active');
+      hive.send({ id, to: target, act: 'inform', requires_reply: false, subject: 'External assistant consultation update', body: text }, 'slack-consultation');
+    },
+    load: () => {
+      if (!existsSync(file)) return [];
+      if (statSync(file).size > 32 * 1024 * 1024) throw new Error('Consultation ledger exceeds size limit');
+      const records: unknown = JSON.parse(readFileSync(file, 'utf8'));
+      if (!Array.isArray(records)) throw new Error('Invalid consultation ledger');
+      return records as SlackConsultation[];
+    },
+    save: (records) => {
+      const tmp = `${file}.tmp`;
+      writeFileSync(tmp, JSON.stringify(records), { mode: 0o600 });
+      renameSync(tmp, file);
+    }
+  });
+  slackConsultations.start();
+  return slackConsultations;
+}
 let slackReplyQueueTimer: ReturnType<typeof setInterval> | null = null;
 let slackReplyQueuePolling = false;
 /** Last public tunnel URL handed out — persisted so Settings can re-show the
@@ -1453,6 +1492,15 @@ function slackReplyScriptPath(): string {
     console.error('[slack] could not stage reply helper in hive root:', e);
     return bundled;
   }
+}
+
+function slackConsultScriptPath(): string {
+  const bundled = app.isPackaged ? join(process.resourcesPath, 'md-slack-consult.cjs') : join(app.getAppPath(), 'resources', 'md-slack-consult.cjs');
+  if (!hive.root()) return bundled;
+  const target = join(hive.root()!, 'bin', 'md-slack-consult.cjs');
+  mkdirSync(dirname(target), { recursive: true });
+  copyFileSync(bundled, target);
+  return target;
 }
 
 /** W3 — the bundled read-only `skills/` source dir copied into each agent's
@@ -1826,6 +1874,7 @@ async function startSlackServer(): Promise<{ ok: boolean; url?: string; error?: 
     port: cfg.slackPort && cfg.slackPort > 0 ? cfg.slackPort : 3847,
     signingSecret: cfg.slackSigningSecret,
     channelId: cfg.slackChannelId,
+    onConsultationEvent: (event, ownBotUserId) => !!(event && slackConsultations?.receive(event, ownBotUserId)),
     // Fires from the HTTP server's event loop (not the IPC thread); route through
     // liveWebContents() so a message arriving during window teardown can't throw.
     // Downloads any file attachments (bot token stays in main; local paths go to IPC).
@@ -1876,6 +1925,11 @@ async function startSlackReplyServer(): Promise<void> {
   slackReplyServer = new SlackReplyServer({
     token,
     getBotToken: () => readConfig().slackBotToken,
+    consultations: {
+      create: (input) => consultationService().create(input),
+      get: (id) => consultationService().get(id),
+      retryNotifications: (id) => consultationService().retryNotifications(id)
+    },
     // An agent posted a DIRECT substantive reply into this thread → record it so the
     // done-summary poller skips it (the poller is a fallback, not a duplicator).
     onReplied: (thread_ts) => { directlyRepliedThreads.add(thread_ts); }
@@ -1888,6 +1942,8 @@ async function startSlackReplyServer(): Promise<void> {
   }
   try {
     writeFileSync(slackReplyConfigPath(), JSON.stringify({ port: r.port, token }), { mode: 0o600 });
+    consultationService().start();
+    process.env.MD_SLACK_CONSULT_SCRIPT = slackConsultScriptPath();
   } catch (e) {
     console.error('[slack] could not write reply config:', e);
   }
@@ -1896,6 +1952,7 @@ async function startSlackReplyServer(): Promise<void> {
 /** Stop and forget the Slack server (+ reply endpoint). Best-effort; safe to call
  *  when not running. The last tunnel URL is retained so Settings keeps showing it. */
 function stopSlackServer(): void {
+  try { slackConsultations?.stop(); } catch { console.error('[slack] could not persist consultation shutdown'); }
   try { slackServer?.stop(); } catch (e) { console.error('[slack] stop failed:', e); }
   slackServer = null;
   try { slackReplyServer?.stop(); } catch (e) { console.error('[slack] reply stop failed:', e); }
@@ -4279,6 +4336,7 @@ ipcMain.handle('slack:setConfig', (_evt, patch: unknown) => {
   const p = (patch ?? {}) as {
     signingSecret?: unknown; botToken?: unknown; channelId?: unknown; port?: unknown; enabled?: unknown;
     proactivePosting?: unknown;
+    consultation?: unknown;
   };
   const next: Partial<HarnessConfig> = {};
   // Trim string fields; an emptied field clears back to undefined.
@@ -4288,6 +4346,21 @@ ipcMain.handle('slack:setConfig', (_evt, patch: unknown) => {
   if (typeof p.port === 'number' && Number.isFinite(p.port)) next.slackPort = p.port;
   if (typeof p.enabled === 'boolean') next.slackEnabled = p.enabled;
   if (typeof p.proactivePosting === 'boolean') next.slackProactivePosting = p.proactivePosting;
+  if (p.consultation && typeof p.consultation === 'object') {
+    const raw = p.consultation as Record<string, unknown>;
+    const consultation: SlackConsultationConfig = {
+      enabled: raw.enabled === true,
+      channelId: typeof raw.channelId === 'string' ? raw.channelId.trim() : '',
+      assistantId: typeof raw.assistantId === 'string' ? raw.assistantId.trim() : '',
+      responderId: typeof raw.responderId === 'string' ? raw.responderId.trim() || undefined : undefined,
+      timeoutSeconds: typeof raw.timeoutSeconds === 'number' ? raw.timeoutSeconds : 120,
+      conversationMode: raw.conversationMode === 'mention_then_question' ? 'mention_then_question' : 'question',
+      greetingText: typeof raw.greetingText === 'string' ? raw.greetingText.trim() || undefined : undefined
+    };
+    const error = validateConsultationConfig(consultation);
+    if (consultation.enabled && error) return { ok: false, error };
+    next.slackConsultation = consultation;
+  }
   writeConfig(next);
   // Reconcile the running server: disabling (or clearing the secret) stops it. We
   // deliberately do NOT auto-(re)start here — the user presses Start in Settings
